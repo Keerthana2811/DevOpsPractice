@@ -968,7 +968,7 @@ print(ip)
 
                             ansible-playbook \
                                 -i inventory/hosts.yml \
-                                playbooks/nginx.yml \
+                                deploy_nginx_container.yml \
                                 --syntax-check
 
                             echo ""
@@ -1016,7 +1016,7 @@ print(ip)
 
                                 ansible-playbook \
                                     -i inventory/hosts.yml \
-                                    playbooks/nginx.yml \
+                                    deploy_nginx_container.yml \
                                     -e ansible_connection=local
                             '''
 
