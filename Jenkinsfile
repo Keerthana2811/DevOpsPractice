@@ -1,7 +1,7 @@
 pipeline {
 
     agent {
-        label 'linux-automation'
+        label 'DevOpsMaster'
     }
 
     options {
