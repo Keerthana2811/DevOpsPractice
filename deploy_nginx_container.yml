@@ -1,0 +1,8 @@
+---
+- name: Deploy and configure Nginx container
+  hosts: webservers
+  become: true
+  gather_facts: true
+
+  roles:
+    - nginx

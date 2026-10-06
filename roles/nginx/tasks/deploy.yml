@@ -1,0 +1,149 @@
+---
+# ==========================================================
+# 1. PULL NGINX IMAGE
+# ==========================================================
+
+- name: Pull Nginx image
+  block:
+
+    - name: Pull Nginx image
+      community.docker.docker_image:
+        name: "{{ nginx_image }}"
+        tag: "{{ nginx_image_tag }}"
+        source: pull
+      register: nginx_image_pull
+
+    - name: Verify Nginx image was pulled
+      community.docker.docker_image_info:
+        name: "{{ nginx_image }}:{{ nginx_image_tag }}"
+      register: nginx_image_info
+
+    - name: Verify Nginx image exists
+      ansible.builtin.assert:
+        that:
+          - nginx_image_info.images | length > 0
+        fail_msg: >
+          Nginx image "{{ nginx_image }}:{{ nginx_image_tag }}"
+          was not found after the pull operation.
+
+  rescue:
+
+    - name: Display Nginx image pull error
+      ansible.builtin.debug:
+        msg:
+          - "=========================================="
+          - "NGINX IMAGE PULL FAILED"
+          - "=========================================="
+          - "Image: {{ nginx_image }}:{{ nginx_image_tag }}"
+          - "Error:"
+          - "{{ nginx_image_pull.msg | default('Unknown Docker image pull error') }}"
+          - "=========================================="
+
+    - name: Stop play because image pull failed
+      ansible.builtin.fail:
+        msg: >
+          Failed to pull Nginx image
+          "{{ nginx_image }}:{{ nginx_image_tag }}".
+          Deployment terminated.
+
+
+# ==========================================================
+# 2. CREATE NGINX CONTAINER
+# ==========================================================
+
+- name: Create Nginx container
+  block:
+
+    - name: Create Nginx container
+      community.docker.docker_container:
+        name: "{{ nginx_container_name }}"
+        image: "{{ nginx_image }}:{{ nginx_image_tag }}"
+        state: started
+        restart_policy: "{{ nginx_restart_policy }}"
+        published_ports:
+          - "{{ nginx_host_port }}:{{ nginx_container_port }}"
+      register: nginx_container_create
+
+  rescue:
+
+    - name: Display Nginx container creation error
+      ansible.builtin.debug:
+        msg:
+          - "=========================================="
+          - "NGINX CONTAINER CREATION FAILED"
+          - "=========================================="
+          - "Container: {{ nginx_container_name }}"
+          - "Image: {{ nginx_image }}:{{ nginx_image_tag }}"
+          - "Error:"
+          - "{{ nginx_container_create.msg | default('Unknown Docker container creation error') }}"
+          - "=========================================="
+
+    - name: Stop play because container creation failed
+      ansible.builtin.fail:
+        msg: >
+          Failed to create Nginx container
+          "{{ nginx_container_name }}".
+          Deployment terminated.
+
+
+# ==========================================================
+# 3. VERIFY CONTAINER WAS CREATED AND IS RUNNING
+# ==========================================================
+
+- name: Verify Nginx container
+  block:
+
+    - name: Get Nginx container information
+      community.docker.docker_container_info:
+        name: "{{ nginx_container_name }}"
+      register: nginx_container_info
+
+    - name: Verify Nginx container exists
+      ansible.builtin.assert:
+        that:
+          - nginx_container_info.exists | default(false)
+        fail_msg: >
+          Nginx container "{{ nginx_container_name }}"
+          was not found after creation.
+
+    - name: Verify Nginx container is running
+      ansible.builtin.assert:
+        that:
+          - nginx_container_info.container.State.Status == "running"
+        fail_msg: >
+          Nginx container "{{ nginx_container_name }}"
+          was created but is not running.
+
+          Current state:
+          {{ nginx_container_info.container.State.Status | default('unknown') }}
+
+  rescue:
+
+    - name: Display Nginx container verification error
+      ansible.builtin.debug:
+        msg:
+          - "=========================================="
+          - "NGINX CONTAINER VERIFICATION FAILED"
+          - "=========================================="
+          - "Container: {{ nginx_container_name }}"
+          - "Exists:"
+          - "{{ nginx_container_info.exists | default(false) }}"
+          - "State:"
+          - "{{ nginx_container_info.container.State.Status | default('unknown') }}"
+          - "=========================================="
+
+    - name: Stop play because container verification failed
+      ansible.builtin.fail:
+        msg: >
+          Nginx container "{{ nginx_container_name }}"
+          was not created successfully or is not running.
+          Deployment terminated.
+
+
+# ==========================================================
+# 4. CONFIGURE NGINX
+# ==========================================================
+
+- name: Configure newly deployed Nginx
+  ansible.builtin.include_tasks:
+    file: configure.yml

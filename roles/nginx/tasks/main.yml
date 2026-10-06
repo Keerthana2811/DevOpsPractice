@@ -1,0 +1,93 @@
+---
+- name: Nginx deployment
+  block:
+
+    # --------------------------------------------------
+    # 1. Check supported OS
+    # --------------------------------------------------
+    - name: Verify compatible operating system
+      ansible.builtin.assert:
+        that:
+          - ansible_system == "Linux"
+          - ansible_os_family in ["Debian", "RedHat"]
+        fail_msg: >
+          Unsupported operating system:
+          {{ ansible_distribution }}
+          {{ ansible_distribution_version }}
+
+    # --------------------------------------------------
+    # 2. Get all Docker containers
+    # --------------------------------------------------
+    - name: Get all Docker containers
+      community.docker.docker_container_info:
+        containers: all
+      register: docker_containers
+
+    # --------------------------------------------------
+    # 3. Find Nginx containers
+    # --------------------------------------------------
+    - name: Identify existing Nginx containers
+      ansible.builtin.set_fact:
+        nginx_existing_containers: >-
+          {{
+            docker_containers.containers
+            | selectattr('Config.Image', 'defined')
+            | selectattr('Config.Image', 'match', '^nginx(:|$)')
+            | list
+          }}
+
+    # --------------------------------------------------
+    # 4. Display result
+    # --------------------------------------------------
+    - name: Display Nginx status
+      ansible.builtin.debug:
+        msg: >-
+          {{
+            'One or more Nginx containers already exist. No action will be performed.'
+            if (nginx_existing_containers | length) > 0
+            else 'No Nginx container found. Deploying Nginx.'
+          }}
+
+    # --------------------------------------------------
+    # 5. Deploy only if Nginx doesn't exist
+    # --------------------------------------------------
+    - name: Deploy Nginx
+      ansible.builtin.include_tasks:
+        file: deploy.yml
+      when:
+        - nginx_existing_containers | length == 0
+
+    # --------------------------------------------------
+    # 6. Execute handlers immediately
+    # --------------------------------------------------
+    - name: Apply pending handlers
+      ansible.builtin.meta: flush_handlers
+      when:
+        - nginx_existing_containers | length == 0
+
+    # --------------------------------------------------
+    # 7. Verify newly deployed Nginx
+    # --------------------------------------------------
+    - name: Verify Nginx
+      ansible.builtin.include_tasks:
+        file: verify.yml
+      when:
+        - nginx_existing_containers | length == 0
+
+  rescue:
+
+    - name: Display deployment error
+      ansible.builtin.debug:
+        msg:
+          - "=========================================="
+          - "NGINX DEPLOYMENT FAILED"
+          - "=========================================="
+          - "Host: {{ inventory_hostname }}"
+          - "Error occurred during Nginx deployment."
+          - "=========================================="
+
+    - name: Terminate Nginx deployment
+      ansible.builtin.fail:
+        msg: >
+          Nginx deployment failed on {{ inventory_hostname }}.
+          Play terminated.

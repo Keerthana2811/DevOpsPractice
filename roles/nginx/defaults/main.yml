@@ -1,0 +1,14 @@
+---
+nginx_container_name: nginx
+nginx_image: nginx
+nginx_image_tag: "1.27"
+
+nginx_server_name: "DevOpsMaster"
+
+nginx_host_port: 80
+nginx_container_port: 80
+
+nginx_config_directory: /opt/nginx
+nginx_config_file: /opt/nginx/nginx.conf
+
+nginx_restart_policy: unless-stopped

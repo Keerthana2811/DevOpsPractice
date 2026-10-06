@@ -1,0 +1,144 @@
+---
+- name: Verify Nginx deployment
+  block:
+
+    # ======================================================
+    # 1. CONTAINER CHECK
+    # ======================================================
+
+    - name: Get Nginx container information
+      community.docker.docker_container_info:
+        name: "{{ nginx_container_name }}"
+      register: nginx_verify_container
+
+    - name: Verify Nginx container exists
+      ansible.builtin.assert:
+        that:
+          - nginx_verify_container.exists | default(false)
+        fail_msg: >
+          Nginx container "{{ nginx_container_name }}"
+          does not exist.
+
+    - name: Verify Nginx container is running
+      ansible.builtin.assert:
+        that:
+          - nginx_verify_container.container.State.Status == "running"
+        fail_msg: >
+          Nginx container "{{ nginx_container_name }}"
+          exists but is not running.
+
+          Current state:
+          {{ nginx_verify_container.container.State.Status | default('unknown') }}
+
+    # ======================================================
+    # 2. LOOPBACK CHECK
+    # ======================================================
+
+    - name: Check Nginx through loopback
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ nginx_host_port }}"
+        method: GET
+        status_code: 200
+        return_content: true
+      register: nginx_loopback_response
+      retries: 5
+      delay: 3
+      until: nginx_loopback_response.status == 200
+
+    - name: Verify server name in loopback response
+      ansible.builtin.assert:
+        that:
+          - nginx_server_name in nginx_loopback_response.content
+        fail_msg: >
+          Nginx responded through loopback, but expected server name
+          "{{ nginx_server_name }}" was not found in the response.
+
+    # ======================================================
+    # 3. IP CHECK
+    # ======================================================
+
+    - name: Check Nginx through server IP
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}:{{ nginx_host_port }}"
+        method: GET
+        status_code: 200
+        return_content: true
+      register: nginx_ip_response
+      retries: 5
+      delay: 3
+      until: nginx_ip_response.status == 200
+
+    - name: Verify server name in IP response
+      ansible.builtin.assert:
+        that:
+          - nginx_server_name in nginx_ip_response.content
+        fail_msg: >
+          Nginx responded through {{ ansible_host }}, but expected
+          server name "{{ nginx_server_name }}" was not found
+          in the response.
+
+    # ======================================================
+    # 4. HOSTNAME CHECK
+    # ======================================================
+
+    - name: Check Nginx through server hostname
+      ansible.builtin.uri:
+        url: "http://{{ ansible_hostname }}:{{ nginx_host_port }}"
+        method: GET
+        status_code: 200
+        return_content: true
+      register: nginx_hostname_response
+      retries: 5
+      delay: 3
+      until: nginx_hostname_response.status == 200
+
+    - name: Verify server name in hostname response
+      ansible.builtin.assert:
+        that:
+          - nginx_server_name in nginx_hostname_response.content
+        fail_msg: >
+          Nginx responded through hostname {{ ansible_hostname }},
+          but expected server name "{{ nginx_server_name }}"
+          was not found in the response.
+
+    # ======================================================
+    # FINAL SUCCESS
+    # ======================================================
+
+    - name: Display Nginx verification success
+      ansible.builtin.debug:
+        msg:
+          - "=========================================="
+          - "NGINX VERIFICATION SUCCESSFUL"
+          - "=========================================="
+          - "Container: {{ nginx_container_name }}"
+          - "Container state: RUNNING"
+          - "Loopback: http://127.0.0.1:{{ nginx_host_port }} - OK"
+          - "IP: http://{{ ansible_host }}:{{ nginx_host_port }} - OK"
+          - "Hostname: http://{{ ansible_hostname }}:{{ nginx_host_port }} - OK"
+          - "Server name: {{ nginx_server_name }} - VERIFIED"
+          - "=========================================="
+
+  rescue:
+
+    - name: Display Nginx verification failure
+      ansible.builtin.debug:
+        msg:
+          - "=========================================="
+          - "NGINX VERIFICATION FAILED"
+          - "=========================================="
+          - "Container: {{ nginx_container_name }}"
+          - "Expected server name: {{ nginx_server_name }}"
+          - "Loopback response:"
+          - "{{ nginx_loopback_response.content | default('No response') }}"
+          - "IP response:"
+          - "{{ nginx_ip_response.content | default('No response') }}"
+          - "Hostname response:"
+          - "{{ nginx_hostname_response.content | default('No response') }}"
+          - "=========================================="
+
+    - name: Stop play because verification failed
+      ansible.builtin.fail:
+        msg: >
+          Nginx deployment verification failed.
+          Deployment terminated.

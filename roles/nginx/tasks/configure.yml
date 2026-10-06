@@ -1,0 +1,131 @@
+---
+- name: Configure Nginx inside container
+  block:
+
+    # --------------------------------------------------
+    # 1. Read existing nginx.conf inside container
+    # --------------------------------------------------
+
+    - name: Read current Nginx configuration
+      community.docker.docker_container_exec:
+        container: "{{ nginx_container_name }}"
+        command: cat /etc/nginx/nginx.conf
+      register: nginx_current_config
+      changed_when: false
+
+    # --------------------------------------------------
+    # 2. Check whether required server_name exists
+    # --------------------------------------------------
+
+    - name: Check for configured server name
+      ansible.builtin.set_fact:
+        nginx_server_name_exists: >-
+          {{
+            nginx_current_config.stdout
+            is search('server_name\\s+' ~ (nginx_server_name | regex_escape) ~ '\\s*;')
+          }}
+
+    - name: Display server name status
+      ansible.builtin.debug:
+        msg: >-
+          {{
+            'Server name "' ~ nginx_server_name ~ '" already exists. No configuration change required.'
+            if nginx_server_name_exists
+            else 'Server name "' ~ nginx_server_name ~ '" is missing. Updating Nginx configuration.'
+          }}
+
+    # --------------------------------------------------
+    # 3. Render J2 only if server_name is missing
+    # --------------------------------------------------
+
+    - name: Render Nginx configuration from J2 template
+      ansible.builtin.template:
+        src: nginx.conf.j2
+        dest: "/tmp/nginx.conf.{{ inventory_hostname }}"
+        mode: "0644"
+      delegate_to: localhost
+      become: false
+      when:
+        - not nginx_server_name_exists
+
+    # --------------------------------------------------
+    # 4. Copy rendered configuration into container
+    # --------------------------------------------------
+
+    - name: Copy updated Nginx configuration into container
+      community.docker.docker_container_copy_into:
+        container: "{{ nginx_container_name }}"
+        path: "/tmp/nginx.conf.{{ inventory_hostname }}"
+        container_path: "/etc/nginx/nginx.conf"
+      when:
+        - not nginx_server_name_exists
+      notify:
+        - Restart Nginx container
+
+    # --------------------------------------------------
+    # 5. Remove temporary controller file
+    # --------------------------------------------------
+
+    - name: Remove temporary Nginx configuration
+      ansible.builtin.file:
+        path: "/tmp/nginx.conf.{{ inventory_hostname }}"
+        state: absent
+      delegate_to: localhost
+      become: false
+      when:
+        - not nginx_server_name_exists
+
+    # --------------------------------------------------
+    # 6. Test configuration inside container
+    # --------------------------------------------------
+
+    - name: Test Nginx configuration
+      community.docker.docker_container_exec:
+        container: "{{ nginx_container_name }}"
+        command: nginx -t
+      register: nginx_config_test
+      changed_when: false
+
+    - name: Verify Nginx configuration test
+      ansible.builtin.assert:
+        that:
+          - nginx_config_test.rc == 0
+        fail_msg: >
+          Nginx configuration test failed.
+
+          {{ nginx_config_test.stderr | default('No error information available') }}
+
+  rescue:
+
+    # --------------------------------------------------
+    # Error diagnostics
+    # --------------------------------------------------
+
+    - name: Collect Nginx configuration after failure
+      community.docker.docker_container_exec:
+        container: "{{ nginx_container_name }}"
+        command: nginx -T
+      register: nginx_debug_config
+      changed_when: false
+      failed_when: false
+
+    - name: Display Nginx configuration error
+      ansible.builtin.debug:
+        msg:
+          - "=========================================="
+          - "NGINX CONFIGURATION FAILED"
+          - "=========================================="
+          - "Container: {{ nginx_container_name }}"
+          - "Server name: {{ nginx_server_name }}"
+          - "Configuration test:"
+          - "{{ nginx_config_test.stderr | default('Not available') }}"
+          - "Current Nginx configuration:"
+          - "{{ nginx_debug_config.stdout | default('Unable to collect configuration') }}"
+          - "=========================================="
+
+    - name: Stop play because Nginx configuration failed
+      ansible.builtin.fail:
+        msg: >
+          Failed to configure Nginx container
+          "{{ nginx_container_name }}".
+          Deployment terminated.

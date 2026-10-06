@@ -1,0 +1,47 @@
+---
+- name: Restart Nginx container
+  block:
+
+    - name: Restart Nginx container
+      community.docker.docker_container:
+        name: "{{ nginx_container_name }}"
+        state: started
+        restart: true
+
+    - name: Verify Nginx container after restart
+      community.docker.docker_container_info:
+        name: "{{ nginx_container_name }}"
+      register: nginx_restart_info
+
+    - name: Verify container is running after restart
+      ansible.builtin.assert:
+        that:
+          - nginx_restart_info.exists | default(false)
+          - nginx_restart_info.container.State.Status == "running"
+        fail_msg: >
+          Nginx container is not running after restart.
+
+  rescue:
+
+    - name: Collect container state after restart failure
+      community.docker.docker_container_info:
+        name: "{{ nginx_container_name }}"
+      register: nginx_restart_error_info
+      failed_when: false
+
+    - name: Display restart error
+      ansible.builtin.debug:
+        msg:
+          - "=========================================="
+          - "NGINX RESTART FAILED"
+          - "=========================================="
+          - "Container: {{ nginx_container_name }}"
+          - "State:"
+          - "{{ nginx_restart_error_info.container.State | default('Unknown') }}"
+          - "=========================================="
+
+    - name: Terminate deployment
+      ansible.builtin.fail:
+        msg: >
+          Nginx container restart failed.
+          Deployment terminated.
