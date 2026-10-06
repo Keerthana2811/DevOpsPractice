@@ -19,8 +19,8 @@
     # 2. Get all Docker containers
     # --------------------------------------------------
     - name: Get all Docker containers
-      community.docker.docker_container_info:
-        containers: all
+      community.docker.docker_host_info:
+        containers: true
       register: docker_containers
 
     # --------------------------------------------------
