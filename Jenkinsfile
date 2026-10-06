@@ -703,7 +703,7 @@ print(ip)
                             echo "Target IP: ${env.ANSIBLE_IP}"
                             echo "SSH required."
 
-                            sshagent(['deployment-ssh']) {
+                            sshagent(['DevOpsMaster']) {
 
                                 sh '''
                                     set -e
@@ -1033,7 +1033,7 @@ print(ip)
                             echo "Jenkins agent != Ansible target."
                             echo "Using SSH."
 
-                            sshagent(['deployment-ssh']) {
+                            sshagent(['DevOpsMaster']) {
 
                                 sh '''
                                     set -e
